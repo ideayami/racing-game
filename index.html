@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>NEON APEX GP — Pseudo-3D Racer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div id="stage">
+    <canvas id="game" width="1000" height="600"></canvas>
+    <div id="scanlines"></div>
+    <div id="vignette"></div>
+
+    <!-- HUD -->
+    <div id="hud">
+      <div class="hud-box" id="hud-lap">LAP <span id="lapNow">1</span>/<span id="lapTotal">3</span></div>
+      <div class="hud-box" id="hud-time">
+        <div class="hud-label">TIME</div>
+        <div id="curTime">00:00.00</div>
+      </div>
+      <div class="hud-box" id="hud-best">
+        <div class="hud-label">BEST</div>
+        <div id="bestTime">--:--.--</div>
+      </div>
+      <div class="hud-box" id="hud-speed">
+        <div id="speedVal">000</div>
+        <div class="hud-label">KM/H</div>
+      </div>
+    </div>
+
+    <!-- Title screen -->
+    <div id="titleScreen" class="overlay">
+      <h1 class="neon-title">NEON APEX <span class="accent">GP</span></h1>
+      <p class="subtitle">疑似3Dレーシング・ミニゲーム</p>
+      <div class="panel">
+        <p class="blink">ENTER キー / タップで スタート</p>
+        <div class="controls">
+          <div><b>加速</b>：↑ / W</div>
+          <div><b>減速・後退</b>：↓ / S</div>
+          <div><b>ステアリング</b>：← → / A D</div>
+          <div><b>一時停止</b>：ESC</div>
+        </div>
+        <p class="hint">コース1周・全3ラップのタイムアタック。芝生に出るとスピードが落ちるので注意！</p>
+      </div>
+    </div>
+
+    <!-- Pause screen -->
+    <div id="pauseScreen" class="overlay hidden">
+      <h2 class="neon-title small">PAUSE</h2>
+      <p class="blink">ESC キーで再開</p>
+    </div>
+
+    <!-- Result screen -->
+    <div id="resultScreen" class="overlay hidden">
+      <h2 class="neon-title small">FINISH!</h2>
+      <div class="panel">
+        <p>TOTAL TIME: <span id="finalTime" class="accent">00:00.00</span></p>
+        <p>BEST TIME: <span id="finalBest" class="accent">00:00.00</span></p>
+        <p id="newRecord" class="blink hidden">NEW RECORD!</p>
+        <p class="blink">ENTER キー / タップで もう一度</p>
+      </div>
+    </div>
+
+    <!-- Touch controls (mobile) -->
+    <div id="touchControls">
+      <div class="touch-row">
+        <button id="btnLeft" class="touch-btn">◀</button>
+        <button id="btnRight" class="touch-btn">▶</button>
+      </div>
+      <div class="touch-row">
+        <button id="btnBrake" class="touch-btn">▼</button>
+        <button id="btnGas" class="touch-btn touch-gas">▲</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
