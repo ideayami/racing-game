@@ -53,23 +53,37 @@
   // road always seamlessly loops back to its start, no matter
   // how the curves are designed.
   // ---------------------------------------------------------
+  // NOTE: `curve` values below are a small dimensionless steering-rate
+  // (kept small on purpose because the same value also drives the
+  // centrifugal-force physics). The actual on-screen bend comes from
+  // CURVE_TO_WORLD, which converts that rate into a real world-unit
+  // lateral shift when building the centerline. Without this multiplier
+  // the track's visual bend is only a few world units against a
+  // 480-unit-wide road — i.e. it looks like a straight line.
+  const CURVE_TO_WORLD = 190;
+
   function buildTrack() {
     const blocks = [];
     const straight = (n) => blocks.push({ n, c: 0 });
     const curve = (n, c) => blocks.push({ n, c });
 
-    straight(10);
-    curve(14, 0.09);              // sweeping right
+    straight(8);
+    curve(14, 0.11);               // sweeping right
     straight(4);
-    curve(5, -0.16);               // chicane wiggle
-    curve(5, 0.16);
-    curve(5, -0.16);
-    curve(5, 0.16);
-    straight(6);
-    curve(22, -0.07);              // long sweeping left
+    curve(5, -0.22);                // sharp chicane wiggle
+    curve(5, 0.22);
+    curve(5, -0.22);
+    curve(5, 0.22);
+    straight(5);
+    curve(24, -0.09);               // long sweeping left
     straight(4);
-    curve(10, 0.13);               // tight right hairpin
-    straight(10);
+    curve(9, 0.20);                 // tight right hairpin
+    straight(5);
+    curve(6, -0.24);                // quick left-right flick
+    curve(6, 0.24);
+    straight(8);
+    curve(11, 0.17);                // fast right kink into home stretch
+    straight(8);
 
     let sum = 0, count = 0;
     for (const b of blocks) { sum += b.c * b.n; count += b.n; }
@@ -83,7 +97,7 @@
     let x = 0, z = 0;
     for (const s of segments) {
       s.z0 = z; s.centerX0 = x;
-      x += s.curve;
+      x += s.curve * CURVE_TO_WORLD;
       z += SEGMENT_LENGTH;
       s.z1 = z; s.centerX1 = x;
     }
@@ -124,16 +138,17 @@
 
   // Boost pads: [z, halfLength]
   const boostPads = [
-    { z: 500, len: 220 },
-    { z: 5150, len: 220 },
+    { z: 400, len: 220 },
+    { z: 10900, len: 220 },
     { z: track.length - 300, len: 220 },
   ];
 
   // Hazards (oil slicks): z, lateral x, radius
   const hazards = [
-    { z: 4050, x: 0.55, hit: 0 },
-    { z: 6500, x: -0.6, hit: 0 },
-    { z: 8550, x: 0.55, hit: 0 },
+    { z: 3350, x: 0.55, hit: 0 },
+    { z: 6300, x: -0.6, hit: 0 },
+    { z: 8350, x: 0.55, hit: 0 },
+    { z: 10100, x: -0.55, hit: 0 },
   ];
 
   // Rival AI cars
