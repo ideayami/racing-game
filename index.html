@@ -17,18 +17,29 @@
 
     <!-- HUD -->
     <div id="hud">
-      <div class="hud-box" id="hud-lap">LAP <span id="lapNow">1</span>/<span id="lapTotal">3</span></div>
-      <div class="hud-box" id="hud-time">
-        <div class="hud-label">TIME</div>
-        <div id="curTime">00:00.00</div>
+      <div class="hud-left">
+        <div class="hud-box" id="hud-lap">LAP <span id="lapNow">1</span>/<span id="lapTotal">3</span></div>
+        <div class="hud-box" id="hud-rank">RANK <span id="rankVal">1/4</span></div>
       </div>
-      <div class="hud-box" id="hud-best">
-        <div class="hud-label">BEST</div>
-        <div id="bestTime">--:--.--</div>
+      <div class="hud-center">
+        <div class="hud-box" id="hud-time">
+          <div class="hud-label">TIME</div>
+          <div id="curTime">00:00.00</div>
+        </div>
+        <div class="hud-box" id="hud-best">
+          <div class="hud-label">BEST</div>
+          <div id="bestTime">--:--.--</div>
+        </div>
       </div>
-      <div class="hud-box" id="hud-speed">
-        <div id="speedVal">000</div>
-        <div class="hud-label">KM/H</div>
+      <div class="hud-right">
+        <div class="hud-box" id="hud-speed">
+          <div id="speedVal">000</div>
+          <div class="hud-label">KM/H</div>
+        </div>
+        <div class="hud-box" id="hud-nitro">
+          <div class="hud-label">NOS</div>
+          <div id="nitroBar"><div id="nitroFill"></div></div>
+        </div>
       </div>
     </div>
 
@@ -42,9 +53,10 @@
           <div><b>加速</b>：↑ / W</div>
           <div><b>減速・後退</b>：↓ / S</div>
           <div><b>ステアリング</b>：← → / A D</div>
+          <div><b>ニトロ</b>：Space</div>
           <div><b>一時停止</b>：ESC</div>
         </div>
-        <p class="hint">コース1周・全3ラップのタイムアタック。芝生に出るとスピードが落ちるので注意！</p>
+        <p class="hint">3台のライバルカーと全3ラップの順位争い。ピンクの矢印ゾーンはブースト、紫のオイルスリップに乗るとスピンするので避けよう！</p>
       </div>
     </div>
 
@@ -73,6 +85,7 @@
       </div>
       <div class="touch-row">
         <button id="btnBrake" class="touch-btn">▼</button>
+        <button id="btnNitro" class="touch-btn touch-nitro">NOS</button>
         <button id="btnGas" class="touch-btn touch-gas">▲</button>
       </div>
     </div>

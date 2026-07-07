@@ -3,17 +3,9 @@
    racing game rendered on a single <canvas> with no
    external game libraries.
 
-   How the 3D illusion works (short version):
-   - The track is a list of flat "segments" of fixed length.
-   - Each segment has a `curve` value; accumulating curve
-     across segments produces a lateral centerline offset,
-     which is what makes the road bend on screen.
-   - For every horizontal pixel row below the horizon we
-     work out how far ahead on the track that row represents,
-     then project the track's centerline + width for that
-     distance into a screen X position and width. Rows near
-     the horizon represent far-away track (small scale), rows
-     near the bottom represent nearby track (large scale).
+   v2: faster cars, tighter/chicane-heavy course, rival AI
+   cars to race against, boost pads, oil-slick obstacles,
+   and a nitro gauge.
    ========================================================= */
 
 (() => {
@@ -25,39 +17,68 @@
 
   // ---- Camera / projection constants ----
   const CAMERA_HEIGHT = 900;
-  const FOCAL_LENGTH = 260;
-  const ROAD_HALF_WIDTH = 500;
+  const FOCAL_LENGTH = 225;      // lower = wider FOV = stronger sense of speed
+  const ROAD_HALF_WIDTH = 480;
   const SEGMENT_LENGTH = 100;
-  const DRAW_DISTANCE_SPRITES = 3200;
-  const GROUP_LENGTH = 300; // rumble/road color alternation period
+  const DRAW_DISTANCE_SPRITES = 3400;
+  const GROUP_LENGTH = 260;
 
   // ---- Race rules ----
   const TOTAL_LAPS = 3;
 
-  // ---- Player physics constants ----
-  const MAX_SPEED = 300;         // world units / sec
-  const OFFROAD_MAX_SPEED = 110;
-  const ACCEL = 160;
-  const BRAKE = 420;
-  const FRICTION = 70;
-  const STEER_SPEED = 2.6;       // lateral units/sec at full speed
-  const CENTRIFUGAL = 3.2;
-  const X_LIMIT = 1.7;           // how far off-road you can drift before it's pointless
+  // ---- Player physics constants (v2: faster + sharper handling) ----
+  const MAX_SPEED = 460;
+  const OFFROAD_MAX_SPEED = 150;
+  const ACCEL = 230;
+  const BRAKE = 560;
+  const FRICTION = 95;
+  const STEER_SPEED = 3.1;
+  const CENTRIFUGAL = 4.4;
+  const X_LIMIT = 1.85;
+
+  // ---- Nitro ----
+  const NITRO_MAX = 100;
+  const NITRO_DRAIN = 42;     // per second while held
+  const NITRO_RECHARGE = 11;  // per second while not held
+  const NITRO_SPEED_MULT = 1.32;
+  const NITRO_ACCEL_MULT = 1.6;
+
+  // ---- Hazards ----
+  const STUN_DURATION = 0.85;
+  const STUN_SPEED_MULT = 0.35;
+  const BUMP_SPEED_MULT = 0.6;
 
   // ---------------------------------------------------------
-  // Track construction
+  // Track construction — block list + automatic closure so the
+  // road always seamlessly loops back to its start, no matter
+  // how the curves are designed.
   // ---------------------------------------------------------
   function buildTrack() {
-    const segments = [];
-    const addStraight = (n) => { for (let i = 0; i < n; i++) segments.push({ curve: 0 }); };
-    const addCurve = (n, c) => { for (let i = 0; i < n; i++) segments.push({ curve: c }); };
+    const blocks = [];
+    const straight = (n) => blocks.push({ n, c: 0 });
+    const curve = (n, c) => blocks.push({ n, c });
 
-    addStraight(15);
-    addCurve(10, 0.055);   // sweeping right
-    addStraight(8);
-    addCurve(20, -0.055);  // long left hairpin sweep
-    addCurve(10, 0.055);   // right to cancel curvature and rejoin start
-    addStraight(8);
+    straight(10);
+    curve(14, 0.09);              // sweeping right
+    straight(4);
+    curve(5, -0.16);               // chicane wiggle
+    curve(5, 0.16);
+    curve(5, -0.16);
+    curve(5, 0.16);
+    straight(6);
+    curve(22, -0.07);              // long sweeping left
+    straight(4);
+    curve(10, 0.13);               // tight right hairpin
+    straight(10);
+
+    let sum = 0, count = 0;
+    for (const b of blocks) { sum += b.c * b.n; count += b.n; }
+    const closingN = 16;
+    blocks.push({ n: closingN, c: -sum / closingN }); // guarantees net curve = 0
+    straight(6); // short finish straight
+
+    const segments = [];
+    for (const b of blocks) for (let i = 0; i < b.n; i++) segments.push({ curve: b.c });
 
     let x = 0, z = 0;
     for (const s of segments) {
@@ -70,28 +91,29 @@
   }
 
   function wrap(z, len) { return ((z % len) + len) % len; }
+  function signedDelta(a, b, len) { // shortest signed distance from b to a on a loop
+    let d = wrap(a - b, len);
+    if (d > len / 2) d -= len;
+    return d;
+  }
 
   function segmentAt(track, zAbs) {
     const z = wrap(zAbs, track.length);
     const idx = Math.min(track.segments.length - 1, Math.floor(z / SEGMENT_LENGTH));
     return track.segments[idx];
   }
-
   function centerXAt(track, zAbs) {
     const z = wrap(zAbs, track.length);
     const seg = segmentAt(track, z);
     const t = (z - seg.z0) / SEGMENT_LENGTH;
     return seg.centerX0 + (seg.centerX1 - seg.centerX0) * t;
   }
-
-  function curveAt(track, zAbs) {
-    return segmentAt(track, zAbs).curve;
-  }
+  function curveAt(track, zAbs) { return segmentAt(track, zAbs).curve; }
 
   function buildSprites(track) {
     const sprites = [];
-    for (let z = 0; z < track.length; z += 300) {
-      const side = (Math.floor(z / 300) % 2 === 0) ? 1 : -1;
+    for (let z = 0; z < track.length; z += 280) {
+      const side = (Math.floor(z / 280) % 2 === 0) ? 1 : -1;
       sprites.push({ z, side });
     }
     return sprites;
@@ -100,23 +122,53 @@
   const track = buildTrack();
   const sprites = buildSprites(track);
 
+  // Boost pads: [z, halfLength]
+  const boostPads = [
+    { z: 500, len: 220 },
+    { z: 5150, len: 220 },
+    { z: track.length - 300, len: 220 },
+  ];
+
+  // Hazards (oil slicks): z, lateral x, radius
+  const hazards = [
+    { z: 4050, x: 0.55, hit: 0 },
+    { z: 6500, x: -0.6, hit: 0 },
+    { z: 8550, x: 0.55, hit: 0 },
+  ];
+
+  // Rival AI cars
+  function makeAI(offset, baseFactor, color, laneBias) {
+    return { z: wrap(offset, track.length), x: laneBias, speed: MAX_SPEED * 0.6, baseFactor, color, laneBias };
+  }
+  let aiCars = [];
+  function resetAI() {
+    aiCars = [
+      makeAI(260, 0.86, '#ffd23f', -0.35),
+      makeAI(-220, 0.93, '#7CFF6B', 0.35),
+      makeAI(560, 1.0, '#b967ff', 0),
+    ];
+  }
+  resetAI();
+
   // ---------------------------------------------------------
   // Game state
   // ---------------------------------------------------------
   const STORAGE_KEY = 'neonApexGp.bestTime';
 
-  const player = { z: 0, x: 0, speed: 0 };
+  const player = { z: 0, x: 0, speed: 0, nitro: NITRO_MAX, stun: 0 };
   let lapsCompleted = 0;
   let raceTime = 0;
   let lapTime = 0;
   let bestTime = Number(localStorage.getItem(STORAGE_KEY)) || null;
+  let shake = 0;
 
-  let state = 'title'; // title | playing | paused | finished
+  let state = 'title';
   const keys = {};
 
   function resetRace() {
-    player.z = 0; player.x = 0; player.speed = 0;
-    lapsCompleted = 0; raceTime = 0; lapTime = 0;
+    player.z = 0; player.x = 0; player.speed = 0; player.nitro = NITRO_MAX; player.stun = 0;
+    lapsCompleted = 0; raceTime = 0; lapTime = 0; shake = 0;
+    resetAI();
   }
 
   function formatTime(t) {
@@ -147,6 +199,7 @@
 
   function bindTouch(id, code) {
     const el = document.getElementById(id);
+    if (!el) return;
     const on = (ev) => { ev.preventDefault(); keys[code] = true; };
     const off = (ev) => { ev.preventDefault(); keys[code] = false; };
     el.addEventListener('touchstart', on, { passive: false });
@@ -160,6 +213,7 @@
   bindTouch('btnRight', 'ArrowRight');
   bindTouch('btnGas', 'ArrowUp');
   bindTouch('btnBrake', 'ArrowDown');
+  bindTouch('btnNitro', 'Space');
 
   document.getElementById('stage').addEventListener('click', () => {
     if (state === 'title' || state === 'finished') startRace();
@@ -191,6 +245,59 @@
   // ---------------------------------------------------------
   // Update
   // ---------------------------------------------------------
+  function updateAI(ai, dt) {
+    const curve = curveAt(track, ai.z);
+    const severity = Math.min(1, Math.abs(curve) * 5);
+    const target = MAX_SPEED * ai.baseFactor * (1 - severity * 0.55);
+    ai.speed += (target - ai.speed) * Math.min(1, dt * 1.8);
+    ai.z += ai.speed * dt;
+    ai.x = ai.laneBias + Math.sin(ai.z * 0.006) * 0.12;
+  }
+
+  function checkHazards(dt) {
+    for (const h of hazards) {
+      if (h.hit > 0) { h.hit -= dt; continue; }
+      const dz = signedDelta(h.z, player.z, track.length);
+      if (Math.abs(dz) < 70 && Math.abs(player.x - h.x) < 0.32) {
+        player.stun = STUN_DURATION;
+        player.speed *= STUN_SPEED_MULT;
+        shake = 1;
+        h.hit = 2.5;
+      }
+    }
+  }
+
+  function checkAICollisions(dt) {
+    for (const ai of aiCars) {
+      const dz = signedDelta(ai.z, player.z, track.length);
+      if (Math.abs(dz) < 85 && Math.abs(player.x - ai.x) < 0.4) {
+        player.speed *= BUMP_SPEED_MULT;
+        player.x += player.x > ai.x ? 0.25 : -0.25;
+        shake = Math.max(shake, 0.5);
+      }
+    }
+  }
+
+  function checkBoost() {
+    for (const pad of boostPads) {
+      const dz = signedDelta(pad.z, player.z, track.length);
+      if (Math.abs(dz) < pad.len / 2 && Math.abs(player.x) < 0.9) {
+        player.speed = Math.max(player.speed, MAX_SPEED * 1.18);
+      }
+    }
+  }
+
+  function currentRank() {
+    const playerProgress = lapsCompleted * track.length + player.z;
+    let rank = 1;
+    for (const ai of aiCars) {
+      // approximate AI lap progress by total distance travelled (unwrapped via speed*time is complex,
+      // so we track ai.totalZ instead — see updateAI wrap handling below)
+      if (ai.totalZ > playerProgress) rank++;
+    }
+    return rank;
+  }
+
   function update(dt) {
     if (state !== 'playing') return;
 
@@ -198,30 +305,67 @@
     const brakeInput = keys['ArrowDown'] || keys['KeyS'];
     const leftInput = keys['ArrowLeft'] || keys['KeyA'];
     const rightInput = keys['ArrowRight'] || keys['KeyD'];
+    const nitroInput = keys['Space'];
+
+    if (player.stun > 0) player.stun -= dt;
+
+    // Nitro gauge
+    let nitroActive = false;
+    if (nitroInput && player.nitro > 0 && player.stun <= 0) {
+      player.nitro = Math.max(0, player.nitro - NITRO_DRAIN * dt);
+      nitroActive = true;
+    } else {
+      player.nitro = Math.min(NITRO_MAX, player.nitro + NITRO_RECHARGE * dt);
+    }
 
     const onRoad = Math.abs(player.x) <= 1;
-    const maxSpeed = onRoad ? MAX_SPEED : OFFROAD_MAX_SPEED;
+    let maxSpeed = onRoad ? MAX_SPEED : OFFROAD_MAX_SPEED;
+    let accel = ACCEL;
+    if (nitroActive) { maxSpeed *= NITRO_SPEED_MULT; accel *= NITRO_ACCEL_MULT; }
+    if (player.stun > 0) maxSpeed = Math.min(maxSpeed, MAX_SPEED * 0.4);
 
-    if (accelInput) player.speed += ACCEL * dt;
-    else if (brakeInput) player.speed -= BRAKE * dt;
-    else player.speed -= FRICTION * dt;
-
-    player.speed = Math.max(0, Math.min(player.speed, Math.max(maxSpeed, player.speed - FRICTION * dt)));
-    if (player.speed > maxSpeed) player.speed = Math.max(maxSpeed, player.speed - BRAKE * 0.6 * dt);
+    if (player.stun > 0) {
+      player.speed -= FRICTION * 1.4 * dt;
+    } else if (accelInput) {
+      player.speed += accel * dt;
+    } else if (brakeInput) {
+      player.speed -= BRAKE * dt;
+    } else {
+      player.speed -= FRICTION * dt;
+    }
+    player.speed = Math.max(0, player.speed);
+    if (player.speed > maxSpeed) player.speed = Math.max(maxSpeed, player.speed - BRAKE * 0.5 * dt);
 
     const speedRatio = player.speed / MAX_SPEED;
-    const steerAmt = STEER_SPEED * dt * (0.35 + 0.65 * speedRatio);
-    if (leftInput) player.x -= steerAmt;
-    if (rightInput) player.x += steerAmt;
+    if (player.stun <= 0) {
+      const steerAmt = STEER_SPEED * dt * (0.35 + 0.65 * speedRatio);
+      if (leftInput) player.x -= steerAmt;
+      if (rightInput) player.x += steerAmt;
+    }
 
     const curve = curveAt(track, player.z);
     player.x -= curve * CENTRIFUGAL * speedRatio * dt;
-
     player.x = Math.max(-X_LIMIT, Math.min(X_LIMIT, player.x));
 
     player.z += player.speed * dt;
     raceTime += dt;
     lapTime += dt;
+
+    checkHazards(dt);
+    checkAICollisions(dt);
+    checkBoost();
+
+    for (const ai of aiCars) {
+      if (ai.totalZ === undefined) ai.totalZ = ai.z;
+      const prevZ = ai.z;
+      updateAI(ai, dt);
+      let delta = ai.z - prevZ;
+      if (delta < 0) delta += track.length; // shouldn't normally happen (speed>=0) but guards wrap
+      ai.totalZ += delta;
+      ai.z = wrap(ai.z, track.length);
+    }
+
+    if (shake > 0) shake = Math.max(0, shake - dt * 2.2);
 
     if (player.z >= track.length) {
       player.z -= track.length;
@@ -243,6 +387,13 @@
     return idx === 0 ? colorA : colorB;
   }
 
+  function isBoostZone(zAbs) {
+    for (const pad of boostPads) {
+      if (Math.abs(signedDelta(pad.z, zAbs, track.length)) < pad.len / 2) return true;
+    }
+    return false;
+  }
+
   function drawSky() {
     const grad = ctx.createLinearGradient(0, 0, 0, HORIZON);
     grad.addColorStop(0, '#1a0a3a');
@@ -251,7 +402,6 @@
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, WIDTH, HORIZON);
 
-    // simple synthwave sun
     const sunX = WIDTH / 2;
     const sunY = HORIZON - 40;
     const sunR = 70;
@@ -262,7 +412,6 @@
     ctx.beginPath();
     ctx.arc(sunX, sunY, sunR, 0, Math.PI * 2);
     ctx.fill();
-    // sun stripes
     ctx.fillStyle = '#1a0a3a';
     for (let i = 0; i < 5; i++) {
       const stripeY = sunY + sunR * 0.15 * i - 10;
@@ -292,12 +441,13 @@
       ctx.fillStyle = groupColor(zAbs, '#e6e6e6', '#c0392b');
       ctx.fillRect(screenCenterX - rumbleHalfScreen, y, rumbleHalfScreen * 2, 1);
 
-      ctx.fillStyle = groupColor(zAbs, '#3a3a4a', '#33334a');
+      const boosting = isBoostZone(zAbs);
+      ctx.fillStyle = boosting ? groupColor(zAbs, '#ff9dbb', '#33334a') : groupColor(zAbs, '#3a3a4a', '#33334a');
       ctx.fillRect(screenCenterX - roadHalfScreen, y, roadHalfScreen * 2, 1);
 
       if (Math.floor(wrap(zAbs, track.length) / 200) % 2 === 0) {
         const dashHalf = Math.max(1, roadHalfScreen * 0.035);
-        ctx.fillStyle = '#f4f1ea';
+        ctx.fillStyle = boosting ? '#08d9d6' : '#f4f1ea';
         ctx.fillRect(screenCenterX - dashHalf, y, dashHalf * 2, 1);
       }
     }
@@ -306,7 +456,6 @@
   }
 
   function drawFinishLine(playerWorldX) {
-    // checkered banner near z=0 of the lap
     let d = wrap(0 - player.z, track.length);
     if (d > 1 && d < 2000) {
       const scale = FOCAL_LENGTH / d;
@@ -330,7 +479,17 @@
     for (const s of sprites) {
       const d = wrap(s.z - player.z, track.length);
       if (d <= 1 || d > DRAW_DISTANCE_SPRITES) continue;
-      visible.push({ ...s, d });
+      visible.push({ kind: 'pole', d, side: s.side });
+    }
+    for (const h of hazards) {
+      const d = wrap(h.z - player.z, track.length);
+      if (d <= 1 || d > DRAW_DISTANCE_SPRITES) continue;
+      visible.push({ kind: 'hazard', d, x: h.x });
+    }
+    for (const ai of aiCars) {
+      const d = wrap(ai.z - player.z, track.length);
+      if (d <= 1 || d > DRAW_DISTANCE_SPRITES) continue;
+      visible.push({ kind: 'ai', d, x: ai.x, color: ai.color });
     }
     visible.sort((a, b) => b.d - a.d);
 
@@ -339,40 +498,82 @@
       const rowFromHorizon = (CAMERA_HEIGHT * FOCAL_LENGTH) / s.d;
       const y = HORIZON + rowFromHorizon;
       const centerX = centerXAt(track, player.z + s.d);
-      const worldX = centerX + s.side * (ROAD_HALF_WIDTH + 160);
-      const screenX = WIDTH / 2 + (worldX - playerWorldX) * scale;
 
-      const poleH = 280 * scale;
-      const poleW = Math.max(2, 30 * scale);
-      const color = s.side > 0 ? '#ff2e63' : '#08d9d6';
-
-      ctx.save();
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 14 * Math.min(1, scale * 3);
-      ctx.fillStyle = color;
-      ctx.fillRect(screenX - poleW / 2, y - poleH, poleW, poleH);
-      ctx.restore();
-
-      // small cap/banner top
-      ctx.fillStyle = '#f4f1ea';
-      ctx.fillRect(screenX - poleW, y - poleH - poleW * 0.6, poleW * 2, poleW * 0.6);
+      if (s.kind === 'pole') {
+        const worldX = centerX + s.side * (ROAD_HALF_WIDTH + 160);
+        const screenX = WIDTH / 2 + (worldX - playerWorldX) * scale;
+        const poleH = 280 * scale;
+        const poleW = Math.max(2, 30 * scale);
+        const color = s.side > 0 ? '#ff2e63' : '#08d9d6';
+        ctx.save();
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 14 * Math.min(1, scale * 3);
+        ctx.fillStyle = color;
+        ctx.fillRect(screenX - poleW / 2, y - poleH, poleW, poleH);
+        ctx.restore();
+        ctx.fillStyle = '#f4f1ea';
+        ctx.fillRect(screenX - poleW, y - poleH - poleW * 0.6, poleW * 2, poleW * 0.6);
+      } else if (s.kind === 'hazard') {
+        const worldX = centerX + s.x * ROAD_HALF_WIDTH;
+        const screenX = WIDTH / 2 + (worldX - playerWorldX) * scale;
+        const r = Math.max(2, 34 * scale);
+        ctx.save();
+        ctx.fillStyle = 'rgba(20,20,20,0.85)';
+        ctx.beginPath();
+        ctx.ellipse(screenX, y - r * 0.15, r, r * 0.4, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(180,60,255,0.5)';
+        ctx.beginPath();
+        ctx.ellipse(screenX, y - r * 0.15, r * 0.6, r * 0.24, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      } else if (s.kind === 'ai') {
+        const worldX = centerX + s.x * ROAD_HALF_WIDTH;
+        const screenX = WIDTH / 2 + (worldX - playerWorldX) * scale;
+        const carH = 70 * scale;
+        const carW = 60 * scale;
+        ctx.save();
+        ctx.shadowColor = s.color;
+        ctx.shadowBlur = 10 * Math.min(1, scale * 3);
+        ctx.fillStyle = s.color;
+        ctx.beginPath();
+        ctx.moveTo(screenX - carW / 2, y);
+        ctx.lineTo(screenX - carW / 2, y - carH * 0.55);
+        ctx.lineTo(screenX - carW / 3, y - carH);
+        ctx.lineTo(screenX + carW / 3, y - carH);
+        ctx.lineTo(screenX + carW / 2, y - carH * 0.55);
+        ctx.lineTo(screenX + carW / 2, y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
     }
   }
 
-  function drawCar() {
+  function drawCar(nitroActive) {
     const cx = WIDTH / 2;
     const baseY = HEIGHT - 46;
-    const lean = Math.max(-14, Math.min(14, (player.x) * 10));
+    const lean = Math.max(-16, Math.min(16, (player.x) * 11));
+    const spin = player.stun > 0 ? (STUN_DURATION - player.stun) * 30 : 0;
     ctx.save();
     ctx.translate(cx + lean, baseY);
+    if (spin) ctx.rotate(spin);
 
-    // shadow
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.beginPath();
     ctx.ellipse(0, 34, 60, 12, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // body
+    if (nitroActive || player.speed > MAX_SPEED * 0.85) {
+      ctx.fillStyle = nitroActive ? 'rgba(8,217,214,0.85)' : 'rgba(255,210,63,0.5)';
+      ctx.beginPath();
+      ctx.moveTo(-16, 34);
+      ctx.lineTo(0, 34 + 30 + (nitroActive ? 20 : 0));
+      ctx.lineTo(16, 34);
+      ctx.closePath();
+      ctx.fill();
+    }
+
     ctx.fillStyle = '#ff2e63';
     ctx.shadowColor = '#ff2e63';
     ctx.shadowBlur = 18;
@@ -387,11 +588,9 @@
     ctx.fill();
     ctx.shadowBlur = 0;
 
-    // cockpit
     ctx.fillStyle = '#0d0221';
     ctx.fillRect(-18, -22, 36, 16);
 
-    // tail lights
     ctx.fillStyle = '#08d9d6';
     ctx.fillRect(-44, 24, 10, 8);
     ctx.fillRect(34, 24, 10, 8);
@@ -399,21 +598,54 @@
     ctx.restore();
   }
 
-  function drawHUD() {
-    document.getElementById('curTime').textContent = formatTime(state === 'title' ? 0 : lapTime);
-    document.getElementById('bestTime').textContent = formatTime(bestTime);
-    const kmh = Math.round((player.speed / MAX_SPEED) * 260);
-    document.getElementById('speedVal').textContent = String(kmh).padStart(3, '0');
+  function drawSpeedLines() {
+    const intensity = Math.max(0, (player.speed / MAX_SPEED) - 0.55) * 2.2;
+    if (intensity <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = Math.min(0.5, intensity * 0.5);
+    ctx.strokeStyle = '#ffffff';
+    const cx = WIDTH / 2, cy = HORIZON + (HEIGHT - HORIZON) * 0.5;
+    for (let i = 0; i < 16; i++) {
+      const ang = (i / 16) * Math.PI * 2;
+      const r1 = 40, r2 = 40 + intensity * 260;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1 * 0.4);
+      ctx.lineTo(cx + Math.cos(ang) * r2, cy + Math.sin(ang) * r2 * 0.4);
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
-  function render() {
-    ctx.clearRect(0, 0, WIDTH, HEIGHT);
+  function drawHUD(nitroActive) {
+    document.getElementById('curTime').textContent = formatTime(state === 'title' ? 0 : lapTime);
+    document.getElementById('bestTime').textContent = formatTime(bestTime);
+    const kmh = Math.round((player.speed / MAX_SPEED) * 300);
+    document.getElementById('speedVal').textContent = String(kmh).padStart(3, '0');
+
+    const rank = currentRank();
+    document.getElementById('rankVal').textContent = `${rank}/${aiCars.length + 1}`;
+
+    const nitroBar = document.getElementById('nitroFill');
+    if (nitroBar) nitroBar.style.width = `${player.nitro}%`;
+    const nitroBox = document.getElementById('hud-nitro');
+    if (nitroBox) nitroBox.classList.toggle('nitro-active', !!nitroActive);
+  }
+
+  function render(nitroActive) {
+    ctx.save();
+    if (shake > 0) {
+      ctx.translate((Math.random() - 0.5) * 10 * shake, (Math.random() - 0.5) * 10 * shake);
+    }
+    ctx.clearRect(-20, -20, WIDTH + 40, HEIGHT + 40);
     drawSky();
     const playerWorldX = renderRoad();
     drawFinishLine(playerWorldX);
     drawSprites(playerWorldX);
-    drawCar();
-    drawHUD();
+    drawSpeedLines();
+    drawCar(nitroActive);
+    ctx.restore();
+    drawHUD(nitroActive);
 
     document.getElementById('pauseScreen').classList.toggle('hidden', state !== 'paused');
   }
@@ -426,7 +658,8 @@
     const dt = Math.min(0.05, (now - lastTime) / 1000);
     lastTime = now;
     update(dt);
-    render();
+    const nitroActive = !!keys['Space'] && player.nitro > 0 && player.stun <= 0 && state === 'playing';
+    render(nitroActive);
     requestAnimationFrame(loop);
   }
 
