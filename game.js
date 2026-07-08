@@ -20,20 +20,20 @@
   const FOCAL_LENGTH = 225;      // lower = wider FOV = stronger sense of speed
   const ROAD_HALF_WIDTH = 480;
   const SEGMENT_LENGTH = 100;
-  const DRAW_DISTANCE_SPRITES = 3400;
+  const DRAW_DISTANCE_SPRITES = 4200;
   const GROUP_LENGTH = 260;
 
   // ---- Race rules ----
   const TOTAL_LAPS = 3;
 
-  // ---- Player physics constants (v2: faster + sharper handling) ----
-  const MAX_SPEED = 460;
-  const OFFROAD_MAX_SPEED = 150;
-  const ACCEL = 230;
-  const BRAKE = 560;
-  const FRICTION = 95;
-  const STEER_SPEED = 3.1;
-  const CENTRIFUGAL = 4.4;
+  // ---- Player physics constants (v3: much higher top speed) ----
+  const MAX_SPEED = 750;
+  const OFFROAD_MAX_SPEED = 220;
+  const ACCEL = 420;
+  const BRAKE = 780;
+  const FRICTION = 140;
+  const STEER_SPEED = 3.6;
+  const CENTRIFUGAL = 5.2;
   const X_LIMIT = 1.85;
 
   // ---- Nitro ----
@@ -153,7 +153,7 @@
 
   // Rival AI cars
   function makeAI(offset, baseFactor, color, laneBias) {
-    return { z: wrap(offset, track.length), x: laneBias, speed: MAX_SPEED * 0.6, baseFactor, color, laneBias };
+    return { z: wrap(offset, track.length), x: laneBias, speed: MAX_SPEED * 0.6, baseFactor, color, laneBias, hitCooldown: 0 };
   }
   let aiCars = [];
   function resetAI() {
@@ -284,11 +284,13 @@
 
   function checkAICollisions(dt) {
     for (const ai of aiCars) {
+      if (ai.hitCooldown > 0) { ai.hitCooldown -= dt; continue; }
       const dz = signedDelta(ai.z, player.z, track.length);
       if (Math.abs(dz) < 85 && Math.abs(player.x - ai.x) < 0.4) {
         player.speed *= BUMP_SPEED_MULT;
-        player.x += player.x > ai.x ? 0.25 : -0.25;
+        player.x += player.x > ai.x ? 0.35 : -0.35;
         shake = Math.max(shake, 0.5);
+        ai.hitCooldown = 1.0; // prevents re-triggering every frame while still touching
       }
     }
   }
@@ -614,7 +616,7 @@
   }
 
   function drawSpeedLines() {
-    const intensity = Math.max(0, (player.speed / MAX_SPEED) - 0.55) * 2.2;
+    const intensity = Math.max(0, (player.speed / MAX_SPEED) - 0.45) * 2.4;
     if (intensity <= 0) return;
     ctx.save();
     ctx.globalAlpha = Math.min(0.5, intensity * 0.5);
