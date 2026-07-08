@@ -270,36 +270,49 @@
   }
 
   function checkHazards(dt) {
+    const playerWorldX = centerXAt(track, player.z) + player.x * ROAD_HALF_WIDTH;
     for (const h of hazards) {
       if (h.hit > 0) { h.hit -= dt; continue; }
       const dz = signedDelta(h.z, player.z, track.length);
-      if (Math.abs(dz) < 55 && Math.abs(player.x - h.x) < 0.13) {
-        player.stun = STUN_DURATION;
-        player.speed *= STUN_SPEED_MULT;
-        shake = 1;
-        h.hit = 2.5;
+      if (Math.abs(dz) < 55) {
+        const hazardWorldX = centerXAt(track, h.z) + h.x * ROAD_HALF_WIDTH;
+        if (Math.abs(playerWorldX - hazardWorldX) < 65) {
+          player.stun = STUN_DURATION;
+          player.speed *= STUN_SPEED_MULT;
+          shake = 1;
+          h.hit = 2.5;
+        }
       }
     }
   }
 
   function checkAICollisions(dt) {
+    const playerWorldX = centerXAt(track, player.z) + player.x * ROAD_HALF_WIDTH;
     for (const ai of aiCars) {
       if (ai.hitCooldown > 0) { ai.hitCooldown -= dt; continue; }
       const dz = signedDelta(ai.z, player.z, track.length);
-      if (Math.abs(dz) < 65 && Math.abs(player.x - ai.x) < 0.22) {
-        player.speed *= BUMP_SPEED_MULT;
-        player.x += player.x > ai.x ? 0.35 : -0.35;
-        shake = Math.max(shake, 0.5);
-        ai.hitCooldown = 1.0; // prevents re-triggering every frame while still touching
+      if (Math.abs(dz) < 65) {
+        const aiWorldX = centerXAt(track, ai.z) + ai.x * ROAD_HALF_WIDTH;
+        const diff = playerWorldX - aiWorldX;
+        if (Math.abs(diff) < 55) {
+          player.speed *= BUMP_SPEED_MULT;
+          player.x += diff > 0 ? 0.35 : -0.35;
+          shake = Math.max(shake, 0.5);
+          ai.hitCooldown = 1.0; // prevents re-triggering every frame while still touching
+        }
       }
     }
   }
 
   function checkBoost() {
+    const playerWorldX = centerXAt(track, player.z) + player.x * ROAD_HALF_WIDTH;
     for (const pad of boostPads) {
       const dz = signedDelta(pad.z, player.z, track.length);
-      if (Math.abs(dz) < pad.len / 2 && Math.abs(player.x) < 0.9) {
-        player.speed = Math.max(player.speed, MAX_SPEED * 1.18);
+      if (Math.abs(dz) < pad.len / 2) {
+        const padCenterWorldX = centerXAt(track, pad.z);
+        if (Math.abs(playerWorldX - padCenterWorldX) < ROAD_HALF_WIDTH * 0.9) {
+          player.speed = Math.max(player.speed, MAX_SPEED * 1.18);
+        }
       }
     }
   }
