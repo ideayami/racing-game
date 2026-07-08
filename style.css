@@ -86,27 +86,28 @@ canvas#game{
   background: var(--panel);
   border: 1px solid var(--cyan);
   border-radius: 6px;
-  padding: 6px 12px;
+  padding: 7px 14px;
   font-family: 'Press Start 2P', monospace;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--cyan);
   text-shadow: 0 0 6px rgba(8,217,214,0.8);
-  min-width: 70px;
+  min-width: 76px;
   text-align: center;
 }
 
 #hud-lap, #hud-rank{ color: var(--amber); text-shadow: 0 0 6px rgba(255,210,63,0.8); }
-.hud-label{ font-size: 8px; opacity: 0.7; margin-bottom: 4px; }
-#hud-speed{ color: var(--pink); text-shadow: 0 0 6px rgba(255,46,99,0.8); font-size: 16px; }
+.hud-label{ font-size: 9px; opacity: 0.75; margin-bottom: 5px; letter-spacing: 1px; }
+#hud-speed{ color: var(--pink); text-shadow: 0 0 6px rgba(255,46,99,0.8); font-size: 18px; }
 
-#hud-nitro{ min-width: 90px; }
+#hud-nitro{ min-width: 120px; }
 #nitroBar{
+  position: relative;
   width: 100%;
-  height: 8px;
-  border-radius: 4px;
+  height: 16px;
+  border-radius: 8px;
   background: rgba(255,255,255,0.12);
   overflow: hidden;
-  border: 1px solid rgba(8,217,214,0.5);
+  border: 1px solid rgba(8,217,214,0.6);
 }
 #nitroFill{
   height: 100%;
@@ -115,7 +116,8 @@ canvas#game{
   transition: width 0.08s linear;
 }
 #hud-nitro.nitro-active{
-  box-shadow: 0 0 14px rgba(8,217,214,0.9);
+  box-shadow: 0 0 18px rgba(8,217,214,0.95);
+  border-color: var(--amber);
 }
 
 /* Overlays */

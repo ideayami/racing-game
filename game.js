@@ -533,37 +533,93 @@
       } else if (s.kind === 'hazard') {
         const worldX = centerX + s.x * ROAD_HALF_WIDTH;
         const screenX = WIDTH / 2 + (worldX - playerWorldX) * scale;
-        const r = Math.max(2, 34 * scale);
+        const r = Math.max(3, 55 * scale);
         ctx.save();
-        ctx.fillStyle = 'rgba(20,20,20,0.85)';
+        // dark puddle base
+        ctx.fillStyle = 'rgba(10,10,15,0.9)';
         ctx.beginPath();
-        ctx.ellipse(screenX, y - r * 0.15, r, r * 0.4, 0, 0, Math.PI * 2);
+        ctx.ellipse(screenX, y - r * 0.12, r, r * 0.42, 0, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = 'rgba(180,60,255,0.5)';
+        // glossy magenta swirl
+        const grad = ctx.createRadialGradient(screenX, y - r * 0.12, r * 0.1, screenX, y - r * 0.12, r);
+        grad.addColorStop(0, 'rgba(230,120,255,0.85)');
+        grad.addColorStop(0.5, 'rgba(180,60,255,0.55)');
+        grad.addColorStop(1, 'rgba(180,60,255,0)');
+        ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.ellipse(screenX, y - r * 0.15, r * 0.6, r * 0.24, 0, 0, Math.PI * 2);
+        ctx.ellipse(screenX, y - r * 0.12, r * 0.8, r * 0.34, 0, 0, Math.PI * 2);
         ctx.fill();
+        // bright warning ring so its extent reads clearly
+        ctx.strokeStyle = 'rgba(255,120,220,0.9)';
+        ctx.lineWidth = Math.max(1, r * 0.06);
+        ctx.beginPath();
+        ctx.ellipse(screenX, y - r * 0.12, r, r * 0.42, 0, 0, Math.PI * 2);
+        ctx.stroke();
         ctx.restore();
       } else if (s.kind === 'ai') {
         const worldX = centerX + s.x * ROAD_HALF_WIDTH;
         const screenX = WIDTH / 2 + (worldX - playerWorldX) * scale;
-        const carH = 70 * scale;
-        const carW = 60 * scale;
+        const carH = 92 * scale;
+        const carW = 78 * scale;
         ctx.save();
+        // ground shadow for grounding/contrast
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.beginPath();
+        ctx.ellipse(screenX, y, carW * 0.55, carW * 0.16, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // body
         ctx.shadowColor = s.color;
-        ctx.shadowBlur = 10 * Math.min(1, scale * 3);
+        ctx.shadowBlur = 16 * Math.min(1, scale * 3);
         ctx.fillStyle = s.color;
         ctx.beginPath();
         ctx.moveTo(screenX - carW / 2, y);
-        ctx.lineTo(screenX - carW / 2, y - carH * 0.55);
+        ctx.lineTo(screenX - carW / 2, y - carH * 0.5);
         ctx.lineTo(screenX - carW / 3, y - carH);
         ctx.lineTo(screenX + carW / 3, y - carH);
-        ctx.lineTo(screenX + carW / 2, y - carH * 0.55);
+        ctx.lineTo(screenX + carW / 2, y - carH * 0.5);
         ctx.lineTo(screenX + carW / 2, y);
         ctx.closePath();
         ctx.fill();
+        ctx.shadowBlur = 0;
+        // cockpit for clear "this is a car" readability
+        ctx.fillStyle = 'rgba(13,2,33,0.9)';
+        ctx.fillRect(screenX - carW * 0.22, y - carH * 0.86, carW * 0.44, carH * 0.32);
+        // headlights
+        ctx.fillStyle = '#fff9d6';
+        ctx.fillRect(screenX - carW * 0.42, y - carH * 0.12, carW * 0.14, carH * 0.1);
+        ctx.fillRect(screenX + carW * 0.28, y - carH * 0.12, carW * 0.14, carH * 0.1);
         ctx.restore();
       }
+    }
+  }
+
+  function drawBoostZones(playerWorldX) {
+    for (const pad of boostPads) {
+      const d = wrap(pad.z - player.z, track.length);
+      if (d <= 1 || d > 2400) continue;
+      const scale = FOCAL_LENGTH / d;
+      const rowFromHorizon = (CAMERA_HEIGHT * FOCAL_LENGTH) / d;
+      const y = HORIZON + rowFromHorizon;
+      const centerX = centerXAt(track, player.z + d);
+      const screenX = WIDTH / 2 + (centerX - playerWorldX) * scale;
+      const halfW = ROAD_HALF_WIDTH * scale;
+      const chevronH = Math.max(4, 46 * scale);
+      const lanes = [-0.55, 0, 0.55];
+      lanes.forEach((lane, i) => {
+        const cx = screenX + lane * halfW;
+        ctx.save();
+        ctx.strokeStyle = i % 2 === 0 ? '#08d9d6' : '#ff2e63';
+        ctx.lineWidth = Math.max(2, 9 * scale);
+        ctx.lineCap = 'round';
+        ctx.shadowColor = ctx.strokeStyle;
+        ctx.shadowBlur = 16 * Math.min(1, scale * 3);
+        ctx.beginPath();
+        ctx.moveTo(cx - halfW * 0.22, y - chevronH);
+        ctx.lineTo(cx, y);
+        ctx.lineTo(cx + halfW * 0.22, y - chevronH);
+        ctx.stroke();
+        ctx.restore();
+      });
     }
   }
 
@@ -658,6 +714,7 @@
     drawSky();
     const playerWorldX = renderRoad();
     drawFinishLine(playerWorldX);
+    drawBoostZones(playerWorldX);
     drawSprites(playerWorldX);
     drawSpeedLines();
     drawCar(nitroActive);
