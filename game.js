@@ -60,7 +60,7 @@
   // lateral shift when building the centerline. Without this multiplier
   // the track's visual bend is only a few world units against a
   // 480-unit-wide road — i.e. it looks like a straight line.
-  const CURVE_TO_WORLD = 190;
+  const CURVE_TO_WORLD = 850;
 
   function buildTrack() {
     const blocks = [];
