@@ -273,7 +273,7 @@
     for (const h of hazards) {
       if (h.hit > 0) { h.hit -= dt; continue; }
       const dz = signedDelta(h.z, player.z, track.length);
-      if (Math.abs(dz) < 70 && Math.abs(player.x - h.x) < 0.32) {
+      if (Math.abs(dz) < 55 && Math.abs(player.x - h.x) < 0.13) {
         player.stun = STUN_DURATION;
         player.speed *= STUN_SPEED_MULT;
         shake = 1;
@@ -286,7 +286,7 @@
     for (const ai of aiCars) {
       if (ai.hitCooldown > 0) { ai.hitCooldown -= dt; continue; }
       const dz = signedDelta(ai.z, player.z, track.length);
-      if (Math.abs(dz) < 85 && Math.abs(player.x - ai.x) < 0.4) {
+      if (Math.abs(dz) < 65 && Math.abs(player.x - ai.x) < 0.22) {
         player.speed *= BUMP_SPEED_MULT;
         player.x += player.x > ai.x ? 0.35 : -0.35;
         shake = Math.max(shake, 0.5);
